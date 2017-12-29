@@ -1,0 +1,11 @@
+[[package]]
+name = "parser"
+version = "0.1.0"
+
+[[package]]
+name = "vidpar"
+version = "0.1.0"
+dependencies = [
+ "parser 0.1.0",
+]
+

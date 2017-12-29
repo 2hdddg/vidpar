@@ -1,0 +1,5 @@
+/target/
+**/*.rs.bk
+viminfo
+*.mp4
+*.h264

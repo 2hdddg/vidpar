@@ -1,0 +1,8 @@
+[package]
+name = "vidpar"
+version = "0.1.0"
+authors = ["peter"]
+
+[dependencies]
+parser = { path = "parser" }
+
