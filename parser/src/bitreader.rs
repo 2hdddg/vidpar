@@ -1,4 +1,5 @@
 use std::io::prelude::*;
+use std;
 
 pub struct BitReader<R> {
     bits: u8,
@@ -54,23 +55,27 @@ impl<R: Read> BitReader<R> {
     }
 
     /* Reads n number of bits into unsigned */
-    pub fn u(&mut self, n: u8) -> Result<u32, &'static str> {
+    pub fn u64(&mut self, n: u8) -> Result<u64, &'static str> {
         let mut requested_bits = n;
-        let mut u: u32 = 0;
+        let mut u: u64 = 0;
+
+        if n > 64 {
+            return Err("bitreader: too many bits, > 64");
+        }
 
         while requested_bits > 0 {
             self.ensure()?;
             if requested_bits >= self.valid_bits {
                 let muted_bits = 8 - self.valid_bits;
                 u <<= self.valid_bits;
-                u |= (self.bits >> muted_bits) as u32;
+                u |= (self.bits >> muted_bits) as u64;
                 requested_bits -= self.valid_bits;
                 self.valid_bits = 0;
             }
             else {
                 let muted_bits = 8 - requested_bits;
                 u <<= requested_bits;
-                u |= (self.bits >> muted_bits) as u32;
+                u |= (self.bits >> muted_bits) as u64;
                 self.bits <<= requested_bits;
                 self.valid_bits -= requested_bits;
                 requested_bits = 0;
@@ -80,12 +85,83 @@ impl<R: Read> BitReader<R> {
         Ok(u)
     }
 
+    pub fn u32(&mut self, n: u8) -> Result<u32, &'static str> {
+        if n > 32 {
+            return Err("bitreader: too many bits, > 32");
+        }
+
+        let u = self.u64(n)?;
+        if u > std::u32::MAX as u64 {
+            return Err("bitreader: u32 overflow");
+        }
+
+        Ok(u as u32)
+    }
+
+    pub fn u8(&mut self, n: u8) -> Result<u8, &'static str> {
+        if n > 8 {
+            return Err("bitreader: too many bits, > 8");
+        }
+
+        let u = self.u64(n)?;
+        if u > std::u8::MAX as u64 {
+            return Err("bitreader: u8 overflow");
+        }
+
+        Ok(u as u8)
+    }
+
     pub fn b(&mut self) -> Result<u8, &'static str> {
-        Ok(self.u(8)? as u8)
+        Ok(self.u8(8)?)
+    }
+
+    pub fn ue64(&mut self) -> Result<u64, &'static str> {
+        let mut leading_zeroes: i32 = -1;
+        let mut bit = 0;
+
+        while bit == 0 {
+            bit = self.u64(1)?;
+            leading_zeroes += 1;
+        }
+
+        let bits = self.u64(leading_zeroes as u8)?;
+
+        Ok(2u64.pow(leading_zeroes as u32) - 1 + bits)
+    }
+
+    pub fn ue32(&mut self) -> Result<u32, &'static str> {
+        let ue = self.ue64()?;
+
+        if ue > std::u32::MAX as u64 {
+            return Err("bitreader: u32 overflow");
+        }
+
+        Ok(ue as u32)
+    }
+
+    pub fn ue8(&mut self) -> Result<u8, &'static str> {
+        let ue = self.ue64()?;
+
+        if ue > std::u8::MAX as u64 {
+            return Err("bitreader: u8 overflow");
+        }
+
+        Ok(ue as u8)
+    }
+
+    pub fn se64(&mut self) -> Result<i64, &'static str> {
+        let code_num = self.ue64()?;
+        let half = (code_num as f64 / 2.0).ceil() as i64;
+        match (code_num & 1) == 1 {
+            /* Odd */
+            true => Ok(half),
+            /* Even */
+            false => Ok(-half),
+        }
     }
 
     pub fn flag(&mut self) -> Result<bool, &'static str> {
-        Ok(self.u(1)? == 1)
+        Ok(self.u64(1)? == 1)
     }
 
     pub fn is_byte_aligned(&self) -> bool {
@@ -114,10 +190,10 @@ mod tests {
         let cursor = Cursor::new(buf);
         let mut reader = BitReader::new(cursor);
 
-        let n1 = reader.u(8).unwrap();
-        let n2 = reader.u(8).unwrap();
-        let n3 = reader.u(8).unwrap();
-        let n4 = reader.u(8).unwrap();
+        let n1 = reader.u64(8).unwrap();
+        let n2 = reader.u64(8).unwrap();
+        let n3 = reader.u64(8).unwrap();
+        let n4 = reader.u64(8).unwrap();
 
         assert_eq!(n1, 0);
         assert_eq!(n2, 1);
@@ -131,10 +207,10 @@ mod tests {
         let cursor = Cursor::new(buf);
         let mut reader = BitReader::new(cursor);
 
-        let n1 = reader.u(3).unwrap();
-        let n2 = reader.u(5).unwrap();
-        let n3 = reader.u(7).unwrap();
-        let n4 = reader.u(1).unwrap();
+        let n1 = reader.u64(3).unwrap();
+        let n2 = reader.u64(5).unwrap();
+        let n3 = reader.u64(7).unwrap();
+        let n4 = reader.u64(1).unwrap();
 
         assert_eq!(n1, 0b100);
         assert_eq!(n2, 0b10000);
@@ -148,11 +224,99 @@ mod tests {
         let cursor = Cursor::new(buf);
         let mut reader = BitReader::new(cursor);
 
-        let n1 = reader.u(15).unwrap();
-        let n2 = reader.u(1).unwrap();
+        let n1 = reader.u64(15).unwrap();
+        let n2 = reader.u64(1).unwrap();
 
         assert_eq!(n1, 0b100000000000001);
         assert_eq!(n2, 0b1);
+    }
+
+    #[test]
+    fn ue_0() {
+        let buf: [u8; 1] = [0b10000000];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let ue = reader.ue64().unwrap();
+
+        assert_eq!(ue, 0);
+    }
+
+    #[test]
+    fn ue_1() {
+        let buf: [u8; 1] = [0b01000000];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let ue = reader.ue64().unwrap();
+
+        assert_eq!(ue, 1);
+    }
+
+    #[test]
+    fn ue_8() {
+        let buf: [u8; 1] = [0b00010010];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let ue = reader.ue64().unwrap();
+
+        assert_eq!(ue, 8);
+    }
+
+    #[test]
+    fn se_0() {
+        let buf: [u8; 1] = [0b10000000];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let se = reader.se64().unwrap();
+
+        assert_eq!(se, 0);
+    }
+
+    #[test]
+    fn se_1() {
+        let buf: [u8; 1] = [0b01000000];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let se = reader.se64().unwrap();
+
+        assert_eq!(se, 1);
+    }
+
+    #[test]
+    fn se_neg_1() {
+        let buf: [u8; 1] = [0b01100000];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let se = reader.se64().unwrap();
+
+        assert_eq!(se, -1);
+    }
+
+    #[test]
+    fn se_4() {
+        let buf: [u8; 1] = [0b00010000];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let se = reader.se64().unwrap();
+
+        assert_eq!(se, 4);
+    }
+
+    #[test]
+    fn se_neg_4() {
+        let buf: [u8; 1] = [0b00010010];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let se = reader.se64().unwrap();
+
+        assert_eq!(se, -4);
     }
 
     #[test]
@@ -170,7 +334,7 @@ mod tests {
         let cursor = Cursor::new(buf);
         let mut reader = BitReader::new(cursor);
 
-        let _ = reader.u(1).unwrap();
+        let _ = reader.u64(1).unwrap();
 
         assert!(!reader.is_byte_aligned());
     }
@@ -206,7 +370,7 @@ mod tests {
         let cursor = Cursor::new(buf);
         let mut reader = BitReader::new(cursor);
 
-        let _n = reader.u(1).unwrap();
+        let _n = reader.u64(1).unwrap();
         reader.byte_align();
         let was_byte_aligned = reader.is_byte_aligned();
         /* Read to make sure we get second byte */

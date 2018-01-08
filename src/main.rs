@@ -35,14 +35,20 @@ fn main() {
         count += 1;
 
         match NalUnit::parse(&mut bitreader) {
-            Ok(nal) => println!("On nal: {:?}", nal),
+            Ok(mut nal) => {
+                /* Got a NAL, handle whatever it contains */
+                match nal.parse_payload() {
+                    Ok(payload) => println!("Parsed payload: {:?}", payload),
+                    Err(s) => println!("Failed to parse payload: {}", s),
+                }
+            },
             Err(s) => {
                 println!("Parser error: {}", s);
                 /* Find next nal */
                 if !reposition(&mut bitreader) {
                     break;
                 }
-            }
+            },
         }
 
         if count > 50 {
