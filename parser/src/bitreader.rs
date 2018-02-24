@@ -1,4 +1,5 @@
 use std::io::prelude::*;
+use std::io::SeekFrom;
 use std;
 
 pub struct BitReader<R> {
@@ -7,6 +8,73 @@ pub struct BitReader<R> {
     num_zeroes: u8,
     reader: R,
     end_of_data: bool,
+}
+
+/* Ensures that bits exists */
+fn ensure<R: Read>(reader: &mut BitReader<R>) -> Result<(), &'static str> {
+    if reader.valid_bits > 0 {
+        return Ok(())
+    }
+
+    let mut buf: [u8; 1] = [0];
+    match reader.reader.read(&mut buf) {
+        Ok(1) => {
+            reader.bits = buf[0];
+            reader.valid_bits = 8;
+
+            if reader.num_zeroes == 2 &&
+                reader.bits == 0x03 {
+
+                reader.num_zeroes = 0;
+                reader.bits = 0;
+                return ensure(reader)
+            }
+            else if reader.bits == 0x00 {
+                reader.num_zeroes += 1;
+            }
+            else {
+                reader.num_zeroes = 0;
+            }
+
+            return Ok(());
+        },
+        Ok(_) => {
+            reader.end_of_data = true;
+            return Err("Tried to read too many bits")
+        },
+        Err(_) => Err("IO error"),
+    }
+}
+
+/* Reads n number of bits into unsigned */
+fn read<R: Read>(reader: &mut BitReader<R>, n: u8) -> Result<u64, &'static str> {
+    let mut requested_bits = n;
+    let mut u: u64 = 0;
+
+    if n > 64 {
+        return Err("bitreader: too many bits, > 64");
+    }
+
+    while requested_bits > 0 {
+        ensure(reader)?;
+        if requested_bits >= reader.valid_bits {
+            let muted_bits = 8 - reader.valid_bits;
+            u <<= reader.valid_bits;
+            u |= (reader.bits >> muted_bits) as u64;
+            requested_bits -= reader.valid_bits;
+            reader.valid_bits = 0;
+        }
+        else {
+            let muted_bits = 8 - requested_bits;
+            u <<= requested_bits;
+            u |= (reader.bits >> muted_bits) as u64;
+            reader.bits <<= requested_bits;
+            reader.valid_bits -= requested_bits;
+            requested_bits = 0;
+        }
+    }
+
+    Ok(u)
 }
 
 impl<R: Read> BitReader<R> {
@@ -18,71 +86,9 @@ impl<R: Read> BitReader<R> {
                     end_of_data: false }
     }
 
-    /* Ensures that bits exists */
-    fn ensure(&mut self) -> Result<(), &'static str> {
-        if self.valid_bits > 0 {
-            return Ok(())
-        }
-
-        let mut buf: [u8; 1] = [0];
-        match self.reader.read(&mut buf) {
-            Ok(1) => {
-                self.bits = buf[0];
-                self.valid_bits = 8;
-
-                if self.num_zeroes == 2 &&
-                    self.bits == 0x03 {
-
-                    self.num_zeroes = 0;
-                    self.bits = 0;
-                    return self.ensure()
-                }
-                else if self.bits == 0x00 {
-                    self.num_zeroes += 1;
-                }
-                else {
-                    self.num_zeroes = 0;
-                }
-
-                return Ok(());
-            },
-            Ok(_) => {
-                self.end_of_data = true;
-                return Err("Tried to read too many bits")
-            },
-            Err(_) => Err("IO error"),
-        }
-    }
-
     /* Reads n number of bits into unsigned */
     pub fn u64(&mut self, n: u8) -> Result<u64, &'static str> {
-        let mut requested_bits = n;
-        let mut u: u64 = 0;
-
-        if n > 64 {
-            return Err("bitreader: too many bits, > 64");
-        }
-
-        while requested_bits > 0 {
-            self.ensure()?;
-            if requested_bits >= self.valid_bits {
-                let muted_bits = 8 - self.valid_bits;
-                u <<= self.valid_bits;
-                u |= (self.bits >> muted_bits) as u64;
-                requested_bits -= self.valid_bits;
-                self.valid_bits = 0;
-            }
-            else {
-                let muted_bits = 8 - requested_bits;
-                u <<= requested_bits;
-                u |= (self.bits >> muted_bits) as u64;
-                self.bits <<= requested_bits;
-                self.valid_bits -= requested_bits;
-                requested_bits = 0;
-            }
-        }
-
-        Ok(u)
+        read(self, n)
     }
 
     pub fn u32(&mut self, n: u8) -> Result<u32, &'static str> {
@@ -160,6 +166,19 @@ impl<R: Read> BitReader<R> {
         }
     }
 
+    pub fn se8(&mut self) -> Result<i8, &'static str> {
+        let se = self.se64()?;
+
+        if se > std::i8::MAX as i64 {
+            return Err("bitreader: u8 overflow");
+        }
+        if se < std::i8::MIN as i64 {
+            return Err("bitreader: u8 underflow");
+        }
+
+        Ok(se as i8)
+    }
+
     pub fn flag(&mut self) -> Result<bool, &'static str> {
         Ok(self.u64(1)? == 1)
     }
@@ -177,6 +196,57 @@ impl<R: Read> BitReader<R> {
     }
 }
 
+
+impl<R: Read+Seek> BitReader<R> {
+    pub fn more_rbsp_data(&mut self) -> Result<bool, &'static str> {
+        /* Keep track of initial position in stream */
+        let initial_pos = self.reader.seek(SeekFrom::Current(0)).unwrap();
+        /* Keep state of self */
+        let bits = self.bits;
+        let valid_bits = self.valid_bits;
+        let num_zeroes = self.num_zeroes;
+        let end_of_data = self.end_of_data;
+
+        /* If next bit is 1 and the rest of the bits are zero than
+         * we have stumbled upon the rbsp_stop_bit and therefore
+         * we have no more rbsp data. */
+
+        let mut next = read(self, 1);
+        if next.is_err() {
+            /* No more data, no need to restore state */
+            return Ok(false);
+        }
+
+        let mut more_data = false;
+
+        if next.unwrap() == 0 {
+            more_data = true;
+        }
+        else {
+            /* Next bit is 1, this might have been the rbsp_stop_bit. */
+            loop {
+                next = read(self, 1);
+                if next.is_err() {
+                    break;
+                }
+                /* A later 1 bit found, we didn't find the rbsp_stop_bit. */
+                if next.unwrap() == 1 {
+                    more_data = true;
+                    break;
+                }
+            }
+        }
+
+        /* Restore */
+        self.bits = bits;
+        self.valid_bits = valid_bits;
+        self.num_zeroes = num_zeroes;
+        self.end_of_data = end_of_data;
+        self.reader.seek(SeekFrom::Start(initial_pos));
+
+        Ok(more_data)
+    }
+}
 
 
 #[cfg(test)]
@@ -393,5 +463,69 @@ mod tests {
         assert_eq!(n1, 0x00);
         assert_eq!(n2, 0x00);
         assert_eq!(n3, 0x00);
+    }
+
+    #[test]
+    fn more_rbsp_data_at_end() {
+        let buf: [u8; 1] = [1];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        /* Read the one and only byte */
+        reader.b().unwrap();
+
+        let more_rbsp_data = reader.more_rbsp_data().unwrap();
+
+        assert!(!more_rbsp_data);
+    }
+
+    #[test]
+    fn more_rbsp_data_at_a_zero() {
+        let buf: [u8; 1] = [0];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        /* Read all but one bit, last one should be zero */
+        reader.u64(7).unwrap();
+
+        let more_rbsp_data = reader.more_rbsp_data().unwrap();
+
+        /* The last bit should still be here ! */
+        let last = reader.u64(1).unwrap();
+
+        /* Since this bit is zero there could be more rbsp data */
+        assert!(more_rbsp_data);
+        assert!(last == 0);
+    }
+
+    #[test]
+    fn more_rbsp_data_with_rbsp_stop_bit() {
+        let buf: [u8; 1] = [0b10000000];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let more_rbsp_data = reader.more_rbsp_data().unwrap();
+
+        /* The first bit should still be here ! */
+        let first = reader.u64(1).unwrap();
+
+        /* We were at the rbsp stop bit */
+        assert!(!more_rbsp_data);
+        assert!(first == 1);
+    }
+
+    #[test]
+    fn more_rbsp_data_with_rbsp_stop_bit_but_more_data() {
+        let buf: [u8; 1] = [0b10000001];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let more_rbsp_data = reader.more_rbsp_data().unwrap();
+
+        /* The first bit should still be here ! */
+        let first = reader.u64(1).unwrap();
+
+        assert!(more_rbsp_data);
+        assert!(first == 1);
     }
 }

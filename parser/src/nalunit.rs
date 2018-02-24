@@ -4,6 +4,7 @@ use std::io::Cursor;
 
 use bitreader::BitReader;
 use sps::SequenceParameterSet;
+use pps::PictureParameterSet;
 
 #[derive(Debug)]
 pub struct NalUnit {
@@ -13,12 +14,13 @@ pub struct NalUnit {
     svc_extension_flag: bool,
     avc_3d_extension_flag: bool,
 
-    rbsp: Vec<u8>,
+    //rbsp: Vec<u8>,
 }
 
 #[derive(Debug)]
 pub enum NalPayload {
     SequenceParameterSet(SequenceParameterSet),
+    PictureParameterSet(PictureParameterSet),
 }
 
 impl NalUnit {
@@ -27,7 +29,7 @@ impl NalUnit {
     /// the start code (0x00000001/0x000001) and on an even byte
     /// boundary.
     pub fn parse<R: Read>(r: &mut BitReader<R>) ->
-                          Result<NalUnit, &'static str> {
+                          Result<(NalUnit, Vec<u8>), &'static str> {
 
         if !r.is_byte_aligned() {
             return Err("NAL: Should be byte aligned at start of nal");
@@ -100,13 +102,14 @@ impl NalUnit {
             }
         }
 
-        Ok(NalUnit {
+        let nal = NalUnit {
             nal_ref_idc,
             nal_unit_type,
             svc_extension_flag,
             avc_3d_extension_flag,
-            rbsp,
-        })
+        };
+
+        Ok((nal, rbsp))
     }
 
     /// Positions bitreader right after startcode.
@@ -146,7 +149,8 @@ impl NalUnit {
         }
     }
 
-    pub fn parse_payload(&mut self) -> Result<NalPayload, &'static str> {
+    pub fn parse_payload(&mut self, rbsp: Vec<u8>)
+                         -> Result<NalPayload, &'static str> {
         match self.nal_unit_type {
             1 => Err("Slice data non-IDR failed"),
             2 => Err("Slice data A partition failed"),
@@ -156,14 +160,21 @@ impl NalUnit {
             6 => Err("SEI failed"),
             /* Sequence parameter set */
             7 => {
-                let cursor = Cursor::new(&self.rbsp);
-                let mut bitreader = BitReader::new(cursor);
-                let payload = SequenceParameterSet::parse(&mut bitreader)?;
-                return Ok(NalPayload::SequenceParameterSet(payload));
+                let cursor = Cursor::new(rbsp);
+                let mut rbspreader = BitReader::new(cursor);
+                //let payload = SequenceParameterSet::parse(&mut rbspreader)?;
+                //return Ok(NalPayload::SequenceParameterSet(payload));
+                return Err("hello");
             },
            13 => Err("SPS extension failed"),
            15 => Err("Subset SPS failed"),
-            8 => Err("PPS failed"),
+            /* Picture parameter set */
+            8 => {
+                let cursor = Cursor::new(rbsp);
+                let mut bitreader = BitReader::new(cursor);
+                let payload = PictureParameterSet::parse(&mut bitreader)?;
+                return Ok(NalPayload::PictureParameterSet(payload));
+            },
             _ => Err("Not implemented"),
         }
     }
@@ -184,11 +195,11 @@ mod tests {
         let cursor = Cursor::new(buf);
         let mut reader = BitReader::new(cursor);
 
-        let nal = NalUnit::parse(&mut reader).unwrap();
+        let (nal,rbsp) = NalUnit::parse(&mut reader).unwrap();
 
         assert_eq!(nal.nal_ref_idc, 0b10);
         assert_eq!(nal.nal_unit_type, 0b10000);
-        assert_eq!(nal.rbsp, [0x42, 0xff, 0x01]);
+        assert_eq!(rbsp, [0x42, 0xff, 0x01]);
     }
 
     #[test]
@@ -201,9 +212,9 @@ mod tests {
         let cursor = Cursor::new(buf);
         let mut reader = BitReader::new(cursor);
 
-        let nal = NalUnit::parse(&mut reader);
+        let res = NalUnit::parse(&mut reader);
 
-        assert!(nal.is_err());
+        assert!(res.is_err());
     }
 
     #[test]
@@ -217,9 +228,9 @@ mod tests {
         /* Read one bit to make reader not aligned on byte */
         reader.u64(1).unwrap();
 
-        let nal = NalUnit::parse(&mut reader);
+        let res = NalUnit::parse(&mut reader);
 
-        assert!(nal.is_err());
+        assert!(res.is_err());
     }
 
     /* Verifies that position after parse is correct and that
@@ -238,15 +249,15 @@ mod tests {
         /* Position at start of nal, bypass start code ! */
         NalUnit::next(&mut reader).unwrap();
 
-        let nal1 = NalUnit::parse(&mut reader).unwrap();
-        let nal2 = NalUnit::parse(&mut reader).unwrap();
-        let nal3 = NalUnit::parse(&mut reader).unwrap();
+        let (_, rbsp1) = NalUnit::parse(&mut reader).unwrap();
+        let (_, rbsp2) = NalUnit::parse(&mut reader).unwrap();
+        let (_, rbsp3) = NalUnit::parse(&mut reader).unwrap();
         /* After third nal there should be read error */
-        let end  = NalUnit::parse(&mut reader);
+        let end = NalUnit::parse(&mut reader);
 
-        assert_eq!(nal1.rbsp.len(), 3);
-        assert_eq!(nal2.rbsp.len(), 4);
-        assert_eq!(nal3.rbsp.len(), 1);
+        assert_eq!(rbsp1.len(), 3);
+        assert_eq!(rbsp2.len(), 4);
+        assert_eq!(rbsp3.len(), 1);
         assert!(end.is_err() && reader.reached_end_of_data());
     }
 
@@ -260,10 +271,10 @@ mod tests {
         let mut reader = BitReader::new(cursor);
 
         let res = NalUnit::next(&mut reader);
-        let nal = NalUnit::parse(&mut reader).unwrap();
+        let (_, rbsp) = NalUnit::parse(&mut reader).unwrap();
 
         assert!(res.is_ok());
-        assert_eq!(nal.rbsp, [0x42, 0xff, 0x01]);
+        assert_eq!(rbsp, [0x42, 0xff, 0x01]);
     }
 
     /* Verifies that result is ok but bitreader is at end of data */

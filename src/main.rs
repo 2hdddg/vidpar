@@ -35,9 +35,9 @@ fn main() {
         count += 1;
 
         match NalUnit::parse(&mut bitreader) {
-            Ok(mut nal) => {
+            Ok((mut nal, rbsp)) => {
                 /* Got a NAL, handle whatever it contains */
-                match nal.parse_payload() {
+                match nal.parse_payload(rbsp) {
                     Ok(payload) => println!("Parsed payload: {:?}", payload),
                     Err(s) => println!("Failed to parse payload: {}", s),
                 }

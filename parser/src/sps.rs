@@ -103,7 +103,7 @@ impl SequenceParameterSet {
                     separate_colour_plane_flag = r.flag()?;
                 }
                 bit_depth_luma_minus8 = r.ue8()?;
-                if bit_depth_chroma_minus8 > 6 {
+                if bit_depth_luma_minus8 > 6 {
                     return Err("SPS: bit_depth_luma_minus8 too large");
                 }
                 bit_depth_chroma_minus8 = r.ue8()?;
