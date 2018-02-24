@@ -5,6 +5,7 @@ use std::io::Cursor;
 use bitreader::BitReader;
 use sps::SequenceParameterSet;
 use pps::PictureParameterSet;
+use super::*;
 
 #[derive(Debug)]
 pub struct NalUnit {
@@ -23,21 +24,29 @@ pub enum NalPayload {
     PictureParameterSet(PictureParameterSet),
 }
 
+fn err(text: &str) -> ParserError {
+    let unit = ParserUnit::Nal();
+    let description = String::from(text);
+    let error = ParserUnitError { unit, description };
+
+    ParserError::InvalidStream(error)
+}
+
 impl NalUnit {
     /// Starts parsing of NAL unit at the current position of the
     /// bitreader. Caller should make sure that position is after
     /// the start code (0x00000001/0x000001) and on an even byte
     /// boundary.
     pub fn parse<R: Read>(r: &mut BitReader<R>) ->
-                          Result<(NalUnit, Vec<u8>), &'static str> {
+                          Result<(NalUnit, Vec<u8>)> {
 
         if !r.is_byte_aligned() {
-            return Err("NAL: Should be byte aligned at start of nal");
+            return Err(err("Should be byte aligned at start of nal"));
         }
 
         let forbidden_zero_bit = r.u64(1)?;
         if forbidden_zero_bit != 0 {
-            return Err("NAL: forbidden_zero_bit is not 0");
+            return Err(err("forbidden_zero_bit is not 0"));
         }
 
         let nal_ref_idc = r.u8(2)?;
@@ -58,18 +67,18 @@ impl NalUnit {
 
             if svc_extension_flag {
                 /* 3 bytes, svc extension */
-                return Err("NAL: svc extension not implemented");
+                return Err(err("svc extension not implemented"));
             }
             else if avc_3d_extension_flag {
-                return Err("NAL: avc 3d extension not implemented");
+                return Err(err("avc 3d extension not implemented"));
             }
             else {
-                return Err("NAL: mvc extension not implemented");
+                return Err(err("mvc extension not implemented"));
             }
         }
 
         if !r.is_byte_aligned() {
-            return Err("NAL: Should be byte aligned at start of nal rbsp");
+            return Err(err("Should be byte aligned at start of nal rbsp"));
         }
 
         /* Read RBSP bytes until next nal or end of data */
@@ -93,11 +102,9 @@ impl NalUnit {
                     }
                     rbsp.push(b);
                 },
-                Err(s) => {
-                    if r.reached_end_of_data() {
-                        break;
-                    }
-                    return Err(s);
+                Err(e) => match e {
+                    ParserError::BitReaderEndOfStream { .. } => break,
+                    _ => return Err(e),
                 }
             }
         }
@@ -118,8 +125,7 @@ impl NalUnit {
     ///
     /// Returns ok when bitreader reached end of data.
     /// Returns err upon IO error.
-    pub fn next<R: Read>(r: &mut BitReader<R>) ->
-                         Result<bool, &'static str> {
+    pub fn next<R: Read>(r: &mut BitReader<R>) -> Result<bool> {
 
         let mut num_zeroes = 0;
 
@@ -139,35 +145,32 @@ impl NalUnit {
                         _ => num_zeroes = 0,
                     }
                 },
-                Err(s) => {
-                    if r.reached_end_of_data() {
-                        return Ok(false);
-                    }
-                    return Err(s);
-                }
+                Err(e) => match e {
+                    ParserError::BitReaderEndOfStream { .. } => return Ok(false),
+                    _ => return Err(e),
+                },
             }
         }
     }
 
     pub fn parse_payload(&mut self, rbsp: Vec<u8>)
-                         -> Result<NalPayload, &'static str> {
+                         -> Result<NalPayload> {
         match self.nal_unit_type {
-            1 => Err("Slice data non-IDR failed"),
-            2 => Err("Slice data A partition failed"),
-            3 => Err("Slice data B partition failed"),
-            4 => Err("Slice data C partition failed"),
-            5 => Err("Slice data IDR failed"),
-            6 => Err("SEI failed"),
+            1 => Err(err("Slice data non-IDR failed")),
+            2 => Err(err("Slice data A partition failed")),
+            3 => Err(err("Slice data B partition failed")),
+            4 => Err(err("Slice data C partition failed")),
+            5 => Err(err("Slice data IDR failed")),
+            6 => Err(err("SEI failed")),
             /* Sequence parameter set */
             7 => {
                 let cursor = Cursor::new(rbsp);
                 let mut rbspreader = BitReader::new(cursor);
-                //let payload = SequenceParameterSet::parse(&mut rbspreader)?;
-                //return Ok(NalPayload::SequenceParameterSet(payload));
-                return Err("hello");
+                let payload = SequenceParameterSet::parse(&mut rbspreader)?;
+                return Ok(NalPayload::SequenceParameterSet(payload));
             },
-           13 => Err("SPS extension failed"),
-           15 => Err("Subset SPS failed"),
+           13 => Err(err("SPS extension failed")),
+           15 => Err(err("Subset SPS failed")),
             /* Picture parameter set */
             8 => {
                 let cursor = Cursor::new(rbsp);
@@ -175,7 +178,7 @@ impl NalUnit {
                 let payload = PictureParameterSet::parse(&mut bitreader)?;
                 return Ok(NalPayload::PictureParameterSet(payload));
             },
-            _ => Err("Not implemented"),
+            _ => Err(err("Not implemented")),
         }
     }
 }

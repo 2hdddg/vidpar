@@ -1,6 +1,7 @@
 use std::io::prelude::*;
 
 use bitreader::BitReader;
+use super::*;
 
 #[derive(Debug)]
 pub struct SequenceScalingMatrixEntry {
@@ -55,9 +56,17 @@ pub struct SequenceParameterSet {
     vui_parameters: Option<VideoUsabilityInformation>,
 }
 
+fn err(text: &str) -> ParserError {
+    let unit = ParserUnit::Sps();
+    let description = String::from(text);
+    let error = ParserUnitError { unit, description };
+
+    ParserError::InvalidStream(error)
+}
+
 impl SequenceParameterSet {
     pub fn parse<R: Read>(r: &mut BitReader<R>) ->
-                          Result<SequenceParameterSet, &'static str> {
+                          Result<SequenceParameterSet> {
         let profile_idc = r.b()?;
         let constraint_set0_flag = r.flag()?;
         let constraint_set1_flag = r.flag()?;
@@ -68,13 +77,13 @@ impl SequenceParameterSet {
 
         let reserved_zero_2bit = r.u64(2)?;
         if reserved_zero_2bit != 0 {
-            return Err("SPS: Reserved zero 2 bit is not zero");
+            return Err(err("Reserved zero 2 bit is not zero"));
         }
 
         let level_idc = r.u8(8)?;
         let seq_parameter_set_id = r.ue8()?;
         if seq_parameter_set_id > 31 {
-            return Err("SPS: seq_parameter_set_id too large");
+            return Err(err("seq_parameter_set_id too large"));
         }
 
         /* 1 => 4:2:0 */
@@ -97,24 +106,24 @@ impl SequenceParameterSet {
             139 | 134 | 135 => {
                 chroma_format_idc = r.ue8()?;
                 if chroma_format_idc > 3 {
-                    return Err("SPS: chroma_format_idc too large");
+                    return Err(err("chroma_format_idc too large"));
                 }
                 if chroma_format_idc == 3 {
                     separate_colour_plane_flag = r.flag()?;
                 }
                 bit_depth_luma_minus8 = r.ue8()?;
                 if bit_depth_luma_minus8 > 6 {
-                    return Err("SPS: bit_depth_luma_minus8 too large");
+                    return Err(err("bit_depth_luma_minus8 too large"));
                 }
                 bit_depth_chroma_minus8 = r.ue8()?;
                 if bit_depth_chroma_minus8 > 6 {
-                    return Err("SPS: bit_depth_chroma_minus8 too large");
+                    return Err(err("bit_depth_chroma_minus8 too large"));
                 }
                 qpprime_y_zero_transform_bypass_flag = r.flag()?;
                 seq_scaling_matrix_present_flag = r.flag()?;
 
                 if seq_scaling_matrix_present_flag {
-                    return Err("SPS: scaling matrix not implemented");
+                    return Err(err("scaling matrix not implemented"));
                 }
             },
             _ => {},
@@ -122,7 +131,7 @@ impl SequenceParameterSet {
 
         let log2_max_frame_num_minus4 = r.ue32()?;
         if log2_max_frame_num_minus4 > 12 {
-            return Err("SPS: log2_max_frame_num_minus4 larger than 12");
+            return Err(err("log2_max_frame_num_minus4 larger than 12"));
         }
 
         let pic_order_cnt_type = r.ue8()?;
@@ -141,7 +150,7 @@ impl SequenceParameterSet {
                 }
             },
             2 => {},
-            _ => return Err("SPS: pic_order_cnt_type larger than 2"),
+            _ => return Err(err("pic_order_cnt_type larger than 2")),
         }
 
         /* Valid range 0 to MaxDpbFrames */
@@ -175,13 +184,13 @@ impl SequenceParameterSet {
 
         let vui_parameters = None;
         if vui_parameters_present_flag {
-            return Err("SPS: vui parameters not implemented");
+            return Err(err("vui parameters not implemented"));
         }
 
         /* Rules */
         if !frame_mbs_only_flag &&
            !direct_8x8_inference_flag {
-            return Err("SPS: invalid");
+            return Err(err("invalid"));
         }
 
         Ok(SequenceParameterSet {

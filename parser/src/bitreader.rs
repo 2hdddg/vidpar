@@ -1,6 +1,9 @@
 use std::io::prelude::*;
 use std::io::SeekFrom;
+use std::error::Error;
 use std;
+
+use super::*;
 
 pub struct BitReader<R> {
     bits: u8,
@@ -10,8 +13,15 @@ pub struct BitReader<R> {
     end_of_data: bool,
 }
 
+fn err(text: &str) -> ParserError {
+    let description = String::from(text);
+    let error = BitReaderError { description };
+
+    ParserError::BitReaderError(error)
+}
+
 /* Ensures that bits exists */
-fn ensure<R: Read>(reader: &mut BitReader<R>) -> Result<(), &'static str> {
+fn ensure<R: Read>(reader: &mut BitReader<R>) -> Result<()> {
     if reader.valid_bits > 0 {
         return Ok(())
     }
@@ -38,21 +48,22 @@ fn ensure<R: Read>(reader: &mut BitReader<R>) -> Result<(), &'static str> {
 
             return Ok(());
         },
+        /* Zero bytes read, no more data */
         Ok(_) => {
             reader.end_of_data = true;
-            return Err("Tried to read too many bits")
+            return Err(ParserError::BitReaderEndOfStream());
         },
-        Err(_) => Err("IO error"),
+        Err(e) => Err(err(e.description())),
     }
 }
 
 /* Reads n number of bits into unsigned */
-fn read<R: Read>(reader: &mut BitReader<R>, n: u8) -> Result<u64, &'static str> {
+fn read<R: Read>(reader: &mut BitReader<R>, n: u8) -> Result<u64> {
     let mut requested_bits = n;
     let mut u: u64 = 0;
 
     if n > 64 {
-        return Err("bitreader: too many bits, > 64");
+        return Err(err("too many bits, > 64"));
     }
 
     while requested_bits > 0 {
@@ -87,41 +98,41 @@ impl<R: Read> BitReader<R> {
     }
 
     /* Reads n number of bits into unsigned */
-    pub fn u64(&mut self, n: u8) -> Result<u64, &'static str> {
+    pub fn u64(&mut self, n: u8) -> Result<u64> {
         read(self, n)
     }
 
-    pub fn u32(&mut self, n: u8) -> Result<u32, &'static str> {
+    pub fn u32(&mut self, n: u8) -> Result<u32> {
         if n > 32 {
-            return Err("bitreader: too many bits, > 32");
+            return Err(err("too many bits, > 32"));
         }
 
         let u = self.u64(n)?;
         if u > std::u32::MAX as u64 {
-            return Err("bitreader: u32 overflow");
+            return Err(err("u32 overflow"));
         }
 
         Ok(u as u32)
     }
 
-    pub fn u8(&mut self, n: u8) -> Result<u8, &'static str> {
+    pub fn u8(&mut self, n: u8) -> Result<u8> {
         if n > 8 {
-            return Err("bitreader: too many bits, > 8");
+            return Err(err("too many bits, > 8"));
         }
 
         let u = self.u64(n)?;
         if u > std::u8::MAX as u64 {
-            return Err("bitreader: u8 overflow");
+            return Err(err("u8 overflow"));
         }
 
         Ok(u as u8)
     }
 
-    pub fn b(&mut self) -> Result<u8, &'static str> {
+    pub fn b(&mut self) -> Result<u8> {
         Ok(self.u8(8)?)
     }
 
-    pub fn ue64(&mut self) -> Result<u64, &'static str> {
+    pub fn ue64(&mut self) -> Result<u64> {
         let mut leading_zeroes: i32 = -1;
         let mut bit = 0;
 
@@ -135,27 +146,27 @@ impl<R: Read> BitReader<R> {
         Ok(2u64.pow(leading_zeroes as u32) - 1 + bits)
     }
 
-    pub fn ue32(&mut self) -> Result<u32, &'static str> {
+    pub fn ue32(&mut self) -> Result<u32> {
         let ue = self.ue64()?;
 
         if ue > std::u32::MAX as u64 {
-            return Err("bitreader: u32 overflow");
+            return Err(err("u32 overflow"));
         }
 
         Ok(ue as u32)
     }
 
-    pub fn ue8(&mut self) -> Result<u8, &'static str> {
+    pub fn ue8(&mut self) -> Result<u8> {
         let ue = self.ue64()?;
 
         if ue > std::u8::MAX as u64 {
-            return Err("bitreader: u8 overflow");
+            return Err(err("u8 overflow"));
         }
 
         Ok(ue as u8)
     }
 
-    pub fn se64(&mut self) -> Result<i64, &'static str> {
+    pub fn se64(&mut self) -> Result<i64> {
         let code_num = self.ue64()?;
         let half = (code_num as f64 / 2.0).ceil() as i64;
         match (code_num & 1) == 1 {
@@ -166,20 +177,20 @@ impl<R: Read> BitReader<R> {
         }
     }
 
-    pub fn se8(&mut self) -> Result<i8, &'static str> {
+    pub fn se8(&mut self) -> Result<i8> {
         let se = self.se64()?;
 
         if se > std::i8::MAX as i64 {
-            return Err("bitreader: u8 overflow");
+            return Err(err("u8 overflow"));
         }
         if se < std::i8::MIN as i64 {
-            return Err("bitreader: u8 underflow");
+            return Err(err("u8 underflow"));
         }
 
         Ok(se as i8)
     }
 
-    pub fn flag(&mut self) -> Result<bool, &'static str> {
+    pub fn flag(&mut self) -> Result<bool> {
         Ok(self.u64(1)? == 1)
     }
 
@@ -198,7 +209,7 @@ impl<R: Read> BitReader<R> {
 
 
 impl<R: Read+Seek> BitReader<R> {
-    pub fn more_rbsp_data(&mut self) -> Result<bool, &'static str> {
+    pub fn more_rbsp_data(&mut self) -> Result<bool> {
         /* Keep track of initial position in stream */
         let initial_pos = self.reader.seek(SeekFrom::Current(0)).unwrap();
         /* Keep state of self */
@@ -242,7 +253,9 @@ impl<R: Read+Seek> BitReader<R> {
         self.valid_bits = valid_bits;
         self.num_zeroes = num_zeroes;
         self.end_of_data = end_of_data;
-        self.reader.seek(SeekFrom::Start(initial_pos));
+        if self.reader.seek(SeekFrom::Start(initial_pos)).is_err() {
+            return Err(err("Failed to restore reader"));
+        }
 
         Ok(more_data)
     }

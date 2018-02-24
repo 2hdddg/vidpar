@@ -1,6 +1,7 @@
 use std::io::prelude::*;
 
 use bitreader::BitReader;
+use super::*;
 
 #[derive(Debug)]
 pub struct PictureParameterSet {
@@ -22,12 +23,22 @@ pub struct PictureParameterSet {
     deblocking_filter_control_present_flag: bool,
     constrained_intra_pred_flag: bool,
     redundant_pic_cnt_present_flag: bool,
+    transform_8x8_mode_flag: bool,
+    pic_scaling_matrix_present_flag: bool,
+}
+
+fn err(text: &str) -> ParserError {
+    let unit = ParserUnit::Pps();
+    let description = String::from(text);
+    let error = ParserUnitError { unit, description };
+
+    ParserError::InvalidStream(error)
 }
 
 impl PictureParameterSet {
 
     pub fn parse<R: Read + Seek>(r: &mut BitReader<R>) ->
-            Result<PictureParameterSet, &'static str> {
+            Result<PictureParameterSet> {
         let pic_parameter_set_id = r.ue8()?;
         let seq_parameter_set_id = r.ue8()?;
         let entropy_coding_mode_flag = r.flag()?;
@@ -35,7 +46,7 @@ impl PictureParameterSet {
         let num_slice_groups_minus1 = r.ue8()?;
 
         if num_slice_groups_minus1 > 0 {
-            return Err("PPS: Slice groups not impl");
+            return Err(err("Slice groups not impl"));
         }
 
         /* Range 0 - 31 */
@@ -55,8 +66,17 @@ impl PictureParameterSet {
         let constrained_intra_pred_flag = r.flag()?;
         let redundant_pic_cnt_present_flag = r.flag()?;
 
+        /* Defaults when there is no more rbsp data */
+        let mut transform_8x8_mode_flag = false;
+        let mut pic_scaling_matrix_present_flag = false;
+
         let more_rbsp_data = r.more_rbsp_data()?;
         if more_rbsp_data {
+            transform_8x8_mode_flag = r.flag()?;
+            pic_scaling_matrix_present_flag = r.flag()?;
+            if pic_scaling_matrix_present_flag {
+                return Err(err("Scaling matrix not impl"));
+            }
         }
 
         Ok(PictureParameterSet {
@@ -75,6 +95,8 @@ impl PictureParameterSet {
             deblocking_filter_control_present_flag,
             constrained_intra_pred_flag,
             redundant_pic_cnt_present_flag,
+            transform_8x8_mode_flag,
+            pic_scaling_matrix_present_flag,
         })
     }
 }

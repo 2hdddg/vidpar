@@ -11,7 +11,7 @@ fn reposition<R: Read>(r: &mut BitReader<R>) -> bool {
     match NalUnit::next(r) {
         /* Non recoverable */
         Err(s) => {
-            println!("Error: {}", s);
+            println!("Error: {:?}", s);
             return false;
         },
         Ok(false) => {
@@ -39,11 +39,11 @@ fn main() {
                 /* Got a NAL, handle whatever it contains */
                 match nal.parse_payload(rbsp) {
                     Ok(payload) => println!("Parsed payload: {:?}", payload),
-                    Err(s) => println!("Failed to parse payload: {}", s),
+                    Err(s) => println!("Failed to parse payload: {:?}", s),
                 }
             },
             Err(s) => {
-                println!("Parser error: {}", s);
+                println!("Parser error: {:?}", s);
                 /* Find next nal */
                 if !reposition(&mut bitreader) {
                     break;
