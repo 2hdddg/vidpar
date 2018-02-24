@@ -32,6 +32,14 @@ fn err(text: &str) -> ParserError {
     ParserError::InvalidStream(error)
 }
 
+fn not_impl(text: &str) -> ParserError {
+    let unit = ParserUnit::Nal();
+    let description = String::from(text);
+    let error = ParserUnitError { unit, description };
+
+    ParserError::NotImplemented(error)
+}
+
 impl NalUnit {
     /// Starts parsing of NAL unit at the current position of the
     /// bitreader. Caller should make sure that position is after
@@ -46,7 +54,7 @@ impl NalUnit {
 
         let forbidden_zero_bit = r.u64(1)?;
         if forbidden_zero_bit != 0 {
-            return Err(err("forbidden_zero_bit is not 0"));
+            return Err(err("Forbidden_zero_bit is not 0"));
         }
 
         let nal_ref_idc = r.u8(2)?;
@@ -156,12 +164,12 @@ impl NalUnit {
     pub fn parse_payload(&mut self, rbsp: Vec<u8>)
                          -> Result<NalPayload> {
         match self.nal_unit_type {
-            1 => Err(err("Slice data non-IDR failed")),
-            2 => Err(err("Slice data A partition failed")),
-            3 => Err(err("Slice data B partition failed")),
-            4 => Err(err("Slice data C partition failed")),
-            5 => Err(err("Slice data IDR failed")),
-            6 => Err(err("SEI failed")),
+            1 => Err(not_impl("Slice data non-IDR")),
+            2 => Err(not_impl("Slice data A partition")),
+            3 => Err(not_impl("Slice data B partition")),
+            4 => Err(not_impl("Slice data C partition")),
+            5 => Err(not_impl("Slice data IDR")),
+            6 => Err(not_impl("SEI")),
             /* Sequence parameter set */
             7 => {
                 let cursor = Cursor::new(rbsp);
@@ -169,8 +177,8 @@ impl NalUnit {
                 let payload = SequenceParameterSet::parse(&mut rbspreader)?;
                 return Ok(NalPayload::SequenceParameterSet(payload));
             },
-           13 => Err(err("SPS extension failed")),
-           15 => Err(err("Subset SPS failed")),
+           13 => Err(not_impl("SPS extension")),
+           15 => Err(not_impl("Subset SPS")),
             /* Picture parameter set */
             8 => {
                 let cursor = Cursor::new(rbsp);
@@ -178,7 +186,7 @@ impl NalUnit {
                 let payload = PictureParameterSet::parse(&mut bitreader)?;
                 return Ok(NalPayload::PictureParameterSet(payload));
             },
-            _ => Err(err("Not implemented")),
+            _ => Err(not_impl("Unknown payload")),
         }
     }
 }

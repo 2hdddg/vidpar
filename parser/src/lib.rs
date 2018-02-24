@@ -33,9 +33,7 @@ pub enum ParserError {
     BitReaderError(BitReaderError),
     BitReaderEndOfStream(),
     InvalidStream(ParserUnitError),
-/*
     NotImplemented(ParserUnitError),
-*/
 /*
     GeneralError(str),
 */
