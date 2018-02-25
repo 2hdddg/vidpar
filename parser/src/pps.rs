@@ -35,6 +35,14 @@ fn err(text: &str) -> ParserError {
     ParserError::InvalidStream(error)
 }
 
+fn not_impl(text: &str) -> ParserError {
+    let unit = ParserUnit::Pps();
+    let description = String::from(text);
+    let error = ParserUnitError { unit, description };
+
+    ParserError::NotImplemented(error)
+}
+
 impl PictureParameterSet {
 
     pub fn parse<R: Read + Seek>(r: &mut BitReader<R>) ->
@@ -46,7 +54,7 @@ impl PictureParameterSet {
         let num_slice_groups_minus1 = r.ue8()?;
 
         if num_slice_groups_minus1 > 0 {
-            return Err(err("Slice groups not impl"));
+            return Err(not_impl("Slice groups not impl"));
         }
 
         /* Range 0 - 31 */
@@ -75,7 +83,7 @@ impl PictureParameterSet {
             transform_8x8_mode_flag = r.flag()?;
             pic_scaling_matrix_present_flag = r.flag()?;
             if pic_scaling_matrix_present_flag {
-                return Err(err("Scaling matrix not impl"));
+                return Err(not_impl("Scaling matrix not impl"));
             }
         }
 

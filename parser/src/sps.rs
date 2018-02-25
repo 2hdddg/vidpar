@@ -64,6 +64,15 @@ fn err(text: &str) -> ParserError {
     ParserError::InvalidStream(error)
 }
 
+fn not_impl(text: &str) -> ParserError {
+    let unit = ParserUnit::Sps();
+    let description = String::from(text);
+    let error = ParserUnitError { unit, description };
+
+    ParserError::NotImplemented(error)
+}
+
+
 impl SequenceParameterSet {
     pub fn parse<R: Read>(r: &mut BitReader<R>) ->
                           Result<SequenceParameterSet> {
@@ -123,7 +132,7 @@ impl SequenceParameterSet {
                 seq_scaling_matrix_present_flag = r.flag()?;
 
                 if seq_scaling_matrix_present_flag {
-                    return Err(err("scaling matrix not implemented"));
+                    return Err(not_impl("scaling matrix not implemented"));
                 }
             },
             _ => {},
@@ -184,7 +193,7 @@ impl SequenceParameterSet {
 
         let vui_parameters = None;
         if vui_parameters_present_flag {
-            return Err(err("vui parameters not implemented"));
+            return Err(not_impl("vui parameters not implemented"));
         }
 
         /* Rules */
