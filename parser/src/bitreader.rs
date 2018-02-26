@@ -205,6 +205,29 @@ impl<R: Read> BitReader<R> {
     pub fn reached_end_of_data(&self) -> bool {
         self.end_of_data
     }
+
+    /* Reads rbsp trailing bits */
+    pub fn rbsp_trailing_bits(&mut self) -> Result<()> {
+        /* Is this check correct? */
+        if self.is_byte_aligned() {
+            return Ok(());
+        }
+
+        let rbsp_stop_one_bit = self.u8(1)?;
+
+        if rbsp_stop_one_bit != 1 {
+            return Err(err("rbsp_stop_one_bit is not 1"));
+        }
+
+        while !self.is_byte_aligned() {
+            let rbsp_alignment_zero_bit = self.u8(1)?;
+            if rbsp_alignment_zero_bit != 0 {
+                return Err(err("rbsp_alignment_zero_bit is not 0"));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 
@@ -476,6 +499,46 @@ mod tests {
         assert_eq!(n1, 0x00);
         assert_eq!(n2, 0x00);
         assert_eq!(n3, 0x00);
+    }
+
+    #[test]
+    fn rbsp_trailing_bits() {
+        /* Check that we read pased the trailing bits,
+         * S - stop bit, T - trailing, N - next bits
+         *                    STTTTTT     NNNNNNN */
+        let buf: [u8; 2] = [0b10000000, 0b11111111];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        /* Read past stop bit and trailing bits */
+        reader.rbsp_trailing_bits().unwrap();
+
+        /* Should be all 1s now */
+        let ones = reader.b().unwrap();
+
+        assert_eq!(ones, 0xff);
+    }
+
+    #[test]
+    fn rbsp_trailing_bits_no_stop_bit() {
+        let buf: [u8; 1] = [0b01000000];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let res = reader.rbsp_trailing_bits();
+
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn rbsp_trailing_bits_a_non_zero() {
+        let buf: [u8; 1] = [0b10001000];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        let res = reader.rbsp_trailing_bits();
+
+        assert!(res.is_err());
     }
 
     #[test]

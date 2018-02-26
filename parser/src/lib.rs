@@ -27,16 +27,12 @@ pub struct BitReaderError {
     description: String,
 }
 
-
 #[derive(Debug)]
 pub enum ParserError {
     BitReaderError(BitReaderError),
     BitReaderEndOfStream(),
     InvalidStream(ParserUnitError),
     NotImplemented(ParserUnitError),
-/*
-    GeneralError(str),
-*/
 }
 
 impl Error for BitReaderError {

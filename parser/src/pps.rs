@@ -25,8 +25,11 @@ pub struct PictureParameterSet {
     redundant_pic_cnt_present_flag: bool,
     transform_8x8_mode_flag: bool,
     pic_scaling_matrix_present_flag: bool,
+
+    second_chroma_qp_index_offset: i8,
 }
 
+/*
 fn err(text: &str) -> ParserError {
     let unit = ParserUnit::Pps();
     let description = String::from(text);
@@ -34,6 +37,7 @@ fn err(text: &str) -> ParserError {
 
     ParserError::InvalidStream(error)
 }
+*/
 
 fn not_impl(text: &str) -> ParserError {
     let unit = ParserUnit::Pps();
@@ -77,6 +81,7 @@ impl PictureParameterSet {
         /* Defaults when there is no more rbsp data */
         let mut transform_8x8_mode_flag = false;
         let mut pic_scaling_matrix_present_flag = false;
+        let mut second_chroma_qp_index_offset = 0;
 
         let more_rbsp_data = r.more_rbsp_data()?;
         if more_rbsp_data {
@@ -85,7 +90,10 @@ impl PictureParameterSet {
             if pic_scaling_matrix_present_flag {
                 return Err(not_impl("Scaling matrix not impl"));
             }
+
+            second_chroma_qp_index_offset = r.se8()?;
         }
+        r.rbsp_trailing_bits()?;
 
         Ok(PictureParameterSet {
             pic_parameter_set_id,
@@ -105,6 +113,7 @@ impl PictureParameterSet {
             redundant_pic_cnt_present_flag,
             transform_8x8_mode_flag,
             pic_scaling_matrix_present_flag,
+            second_chroma_qp_index_offset,
         })
     }
 }

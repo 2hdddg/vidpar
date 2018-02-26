@@ -196,6 +196,8 @@ impl SequenceParameterSet {
             return Err(not_impl("vui parameters not implemented"));
         }
 
+        r.rbsp_trailing_bits()?;
+
         /* Rules */
         if !frame_mbs_only_flag &&
            !direct_8x8_inference_flag {
