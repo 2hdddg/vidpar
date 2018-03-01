@@ -43,7 +43,7 @@ impl Error for BitReaderError {
 
 impl fmt::Display for BitReaderError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "")
+        write!(f, "Bitreader error: {}", self.description)
     }
 }
 
@@ -55,6 +55,11 @@ impl Error for ParserUnitError {
 
 impl fmt::Display for ParserUnitError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "")
+        write!(f, "Parser error '{}' in {}", self.description,
+            match self.unit {
+                ParserUnit::Nal() => "NAL",
+                ParserUnit::Sps() => "SPS",
+                ParserUnit::Pps() => "PPS",
+            })
     }
 }
