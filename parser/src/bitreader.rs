@@ -10,6 +10,7 @@ pub struct BitReader<R> {
     valid_bits: u8,
     num_zeroes: u8,
     reader: R,
+    pub pos: usize,
     end_of_data: bool,
 }
 
@@ -31,6 +32,7 @@ fn ensure<R: Read>(reader: &mut BitReader<R>) -> Result<()> {
         Ok(1) => {
             reader.bits = buf[0];
             reader.valid_bits = 8;
+            reader.pos += 1;
 
             if reader.num_zeroes == 2 &&
                 reader.bits == 0x03 {
@@ -94,6 +96,7 @@ impl<R: Read> BitReader<R> {
                     valid_bits: 0,
                     num_zeroes: 0,
                     reader: r,
+                    pos: 0,
                     end_of_data: false }
     }
 
@@ -209,9 +212,11 @@ impl<R: Read> BitReader<R> {
     /* Reads rbsp trailing bits */
     pub fn rbsp_trailing_bits(&mut self) -> Result<()> {
         /* Is this check correct? */
+        /*
         if self.is_byte_aligned() {
             return Ok(());
         }
+        */
 
         let rbsp_stop_one_bit = self.u8(1)?;
 
@@ -240,6 +245,7 @@ impl<R: Read+Seek> BitReader<R> {
         let valid_bits = self.valid_bits;
         let num_zeroes = self.num_zeroes;
         let end_of_data = self.end_of_data;
+        let pos = self.pos;
 
         /* If next bit is 1 and the rest of the bits are zero than
          * we have stumbled upon the rbsp_stop_bit and therefore
@@ -276,6 +282,7 @@ impl<R: Read+Seek> BitReader<R> {
         self.valid_bits = valid_bits;
         self.num_zeroes = num_zeroes;
         self.end_of_data = end_of_data;
+        self.pos = pos;
         if self.reader.seek(SeekFrom::Start(initial_pos)).is_err() {
             return Err(err("Failed to restore reader"));
         }
@@ -499,6 +506,19 @@ mod tests {
         assert_eq!(n1, 0x00);
         assert_eq!(n2, 0x00);
         assert_eq!(n3, 0x00);
+    }
+
+    #[test]
+    fn pos_is_increased_at_read() {
+        let buf: [u8; 4] = [0x00, 0x00, 0x03, 0x00];
+        let cursor = Cursor::new(buf);
+        let mut reader = BitReader::new(cursor);
+
+        assert_eq!(reader.pos, 0);
+        reader.flag().unwrap();
+        assert_eq!(reader.pos, 1);
+        reader.flag().unwrap();
+        assert_eq!(reader.pos, 1);
     }
 
     #[test]

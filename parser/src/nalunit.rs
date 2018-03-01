@@ -163,7 +163,10 @@ impl NalUnit {
 
     pub fn parse_payload(&mut self, rbsp: Vec<u8>)
                          -> Result<NalPayload> {
-        match self.nal_unit_type {
+        let rbsp_length = rbsp.len();
+        let cursor = Cursor::new(rbsp);
+        let mut reader = BitReader::new(cursor);
+        let payload = match self.nal_unit_type {
             1 => Err(not_impl("Slice data non-IDR")),
             2 => Err(not_impl("Slice data A partition")),
             3 => Err(not_impl("Slice data B partition")),
@@ -172,22 +175,24 @@ impl NalUnit {
             6 => Err(not_impl("SEI")),
             /* Sequence parameter set */
             7 => {
-                let cursor = Cursor::new(rbsp);
-                let mut rbspreader = BitReader::new(cursor);
-                let payload = SequenceParameterSet::parse(&mut rbspreader)?;
-                return Ok(NalPayload::SequenceParameterSet(payload));
+                let payload = SequenceParameterSet::parse(&mut reader)?;
+                Ok(NalPayload::SequenceParameterSet(payload))
             },
            13 => Err(not_impl("SPS extension")),
            15 => Err(not_impl("Subset SPS")),
             /* Picture parameter set */
             8 => {
-                let cursor = Cursor::new(rbsp);
-                let mut bitreader = BitReader::new(cursor);
-                let payload = PictureParameterSet::parse(&mut bitreader)?;
-                return Ok(NalPayload::PictureParameterSet(payload));
+                let payload = PictureParameterSet::parse(&mut reader)?;
+                Ok(NalPayload::PictureParameterSet(payload))
             },
             _ => Err(not_impl("Unknown payload")),
+        };
+
+        if !payload.is_err() && reader.pos < (rbsp_length - 1) {
+            println!("Not all data consumed: {} of {}", reader.pos, rbsp_length);
         }
+
+        payload
     }
 }
 
