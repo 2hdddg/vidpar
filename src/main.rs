@@ -2,6 +2,7 @@ extern crate parser;
 
 use std::fs::File;
 use std::io::prelude::*;
+use std::env;
 
 use parser::bitreader::BitReader;
 use parser::nalunit::NalUnit;
@@ -23,14 +24,21 @@ fn reposition<R: Read>(r: &mut BitReader<R>) -> bool {
 }
 
 fn main() {
-    let f = File::open("sw.h264").unwrap();
-    let mut bitreader = BitReader::new(f);
-    let mut count = 0;
-
-    if !reposition(&mut bitreader) {
+    /* Retrieve path to h264 file */
+    let path = env::args().nth(1).unwrap_or("sw.h264".to_string());
+    let file = File::open(&path);
+    if file.is_err() {
+        println!("Unable to open h264 file: {}", path);
         return;
     }
 
+    let mut bitreader = BitReader::new(file.unwrap());
+    if !reposition(&mut bitreader) {
+        println!("Unable to find valid nal in h264 file: {}", path);
+        return;
+    }
+
+    let mut count = 0;
     loop {
         count += 1;
 
