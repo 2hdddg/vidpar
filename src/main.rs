@@ -1,27 +1,37 @@
-extern crate parser;
-
 use std::fs::File;
-use std::io::prelude::*;
+use std::io;
+use std::io::Write;
+use std::io::stdout;
 use std::env;
 
+extern crate parser;
 use parser::bitreader::BitReader;
-use parser::nalunit::NalUnit;
+
+mod current;
+use current::Current;
 
 
-fn reposition<R: Read>(r: &mut BitReader<R>) -> bool {
-    match NalUnit::next(r) {
-        /* Non recoverable */
-        Err(s) => {
-            println!("Error: {:?}", s);
-            return false;
+fn print_help() {
+    println!("n | next - Decodes next unit.");
+    println!("q | quit - Quits program.");
+    println!("? | help - Shows this text.");
+}
+
+fn print_curr_slim(curr: &Current) {
+    match curr.nal {
+        None => {
+            println!("Failed to parse NAL.");
         },
-        Ok(false) => {
-            println!("No start of nal found!");
-            return false;
+        Some(ref nal) => {
+            println!("Parsed NAL of type {}.", nal.nal_unit_type);
+            match curr.payload {
+                None => println!("Failed to parse payload."),
+                Some(ref payload) => println!("Parsed {}", "x"),
+            }
         },
-        Ok(true) => true,
     }
 }
+
 
 fn main() {
     /* Retrieve path to h264 file */
@@ -33,35 +43,46 @@ fn main() {
     }
 
     let mut bitreader = BitReader::new(file.unwrap());
-    if !reposition(&mut bitreader) {
-        println!("Unable to find valid nal in h264 file: {}", path);
-        return;
-    }
+    let mut command = String::new();
+    let mut current = Current::new();
 
-    let mut count = 0;
     loop {
-        count += 1;
+        /* Read next command */
+        print!(">");
+        stdout().flush().unwrap();
+        if io::stdin().read_line(&mut command).is_err() {
+            println!("Error reading from stdin");
+            return;
+        }
+        /* Remove newline */
+        command.pop();
 
-        match NalUnit::parse(&mut bitreader) {
-            Ok((mut nal, rbsp)) => {
-                /* Got a NAL, handle whatever it contains */
-                match nal.parse_payload(rbsp) {
-                    Ok(payload) => println!("Parsed payload: {:?}", payload),
-                    Err(s) => println!("Failed to parse payload: {:?}", s),
+        match command.as_ref() {
+            "" => {},
+            "q" | "quit" => return,
+            "?" | "help" => print_help(),
+            "n" | "next" => {
+                match current.next(&mut bitreader) {
+                    false => println!("Reached end of data"),
+                    true => print_curr_slim(&current)
                 }
             },
-            Err(s) => {
-                println!("Parser error: {:?}", s);
-                /* Find next nal */
-                if !reposition(&mut bitreader) {
-                    break;
+            "nal" => {
+                match current.nal {
+                    None => println!("No valid NAL."),
+                    Some(ref nal) => println!("{:#?}", nal),
                 }
             },
+            "payload" => {
+                match current.payload {
+                    None => println!("No valid payload."),
+                    Some(ref payload) => println!("{:#?}", payload),
+                }
+            },
+            _ => {
+                println!("Unknown command: {}", command);
+            },
         }
-
-        if count > 50 {
-            println!("Breaking...");
-            break;
-        }
+        command.clear();
     }
 }

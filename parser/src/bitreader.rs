@@ -92,12 +92,14 @@ fn read<R: Read>(reader: &mut BitReader<R>, n: u8) -> Result<u64> {
 
 impl<R: Read> BitReader<R> {
     pub fn new(r: R) -> BitReader<R> {
-        BitReader { bits: 0,
-                    valid_bits: 0,
-                    num_zeroes: 0,
-                    reader: r,
-                    pos: 0,
-                    end_of_data: false }
+        BitReader {
+            bits: 0,
+            valid_bits: 0,
+            num_zeroes: 0,
+            reader: r,
+            pos: 0,
+            end_of_data: false
+        }
     }
 
     /* Reads n number of bits into unsigned */

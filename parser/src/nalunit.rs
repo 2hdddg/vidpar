@@ -9,13 +9,10 @@ use super::*;
 
 #[derive(Debug)]
 pub struct NalUnit {
-    nal_ref_idc: u8,
-    nal_unit_type: u8,
-
-    svc_extension_flag: bool,
-    avc_3d_extension_flag: bool,
-
-    //rbsp: Vec<u8>,
+    pub nal_ref_idc: u8,
+    pub nal_unit_type: u8,
+    pub svc_extension_flag: bool,
+    pub avc_3d_extension_flag: bool,
 }
 
 #[derive(Debug)]
@@ -161,7 +158,7 @@ impl NalUnit {
         }
     }
 
-    pub fn parse_payload(&mut self, rbsp: Vec<u8>)
+    pub fn parse_payload(&mut self, rbsp: &Vec<u8>)
                          -> Result<NalPayload> {
         let rbsp_length = rbsp.len();
         let cursor = Cursor::new(rbsp);
