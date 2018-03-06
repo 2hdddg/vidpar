@@ -13,16 +13,39 @@ fn print_help() {
 fn print_curr_slim(curr: &Current) {
     match curr.nal {
         None => {
-            println!("Failed to parse NAL.");
+            println!("Failed to parse NAL: {:?}",
+                     curr.parser_error.as_ref().unwrap());
         },
         Some(ref nal) => {
             println!("Parsed NAL of type {}.", nal.nal_unit_type);
             match curr.payload {
-                None => println!("Failed to parse payload."),
+                None => println!("Failed to parse payload: {:?}",
+                                 curr.parser_error.as_ref().unwrap()),
                 Some(ref payload) => println!("Parsed {}", "x"),
             }
         },
     }
+}
+
+fn print_payload_bytes(curr: &Current) {
+    if curr.rbsp.is_none() {
+        println!("No rbsp");
+        return;
+    }
+
+    let mut i = 0;
+    let num = 10;
+    for x in curr.rbsp.as_ref().unwrap() {
+        if i % num == 0 {
+            if i > 0 {
+                println!("");
+            }
+            print!("{:08} ", i);
+        }
+        print!("{:02x} ", x);
+        i += 1;
+    }
+    println!("");
 }
 
 pub fn invoke<R: Read>(command: String,
@@ -49,6 +72,9 @@ pub fn invoke<R: Read>(command: String,
                 None => println!("No valid payload."),
                 Some(ref payload) => println!("{:#?}", payload),
             }
+        },
+        "bytes" => {
+            print_payload_bytes(current);
         },
         _ => {
             println!("Unknown command: {}", command);

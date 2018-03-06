@@ -3,10 +3,12 @@ use std::io::prelude::*;
 use parser::bitreader::BitReader;
 use parser::nalunit::NalUnit;
 use parser::nalunit::NalPayload;
+use parser::ParserError;
 
 pub struct Current {
     pub nal: Option<NalUnit>,
     pub payload: Option<NalPayload>,
+    pub parser_error: Option<ParserError>,
     pub rbsp: Option<Vec<u8>>,
 }
 
@@ -30,6 +32,7 @@ impl Current {
         Current {
             nal: None,
             payload: None,
+            parser_error: None,
             rbsp: None,
         }
     }
@@ -38,6 +41,7 @@ impl Current {
     pub fn next<R: Read>(&mut self, bitreader: &mut BitReader<R>) -> bool {
         self.nal = None;
         self.payload = None;
+        self.parser_error = None;
         self.rbsp = None;
 
         if self.nal.is_none() {
@@ -48,6 +52,7 @@ impl Current {
 
         let parsed_nal = NalUnit::parse(bitreader);
         if parsed_nal.is_err() {
+            self.parser_error = parsed_nal.err();
             return true;
         }
 
@@ -56,6 +61,7 @@ impl Current {
         self.nal = Some(nal);
         self.rbsp = Some(rbsp);
         if parsed_payload.is_err() {
+            self.parser_error = parsed_payload.err();
             return true;
         }
 
