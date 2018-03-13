@@ -1,4 +1,7 @@
 use std::io::prelude::*;
+use std::fs::File;
+use std::io;
+use std::io::stdout;
 
 use parser::bitreader::BitReader;
 use current::Current;
@@ -8,6 +11,9 @@ fn print_help() {
     println!("n | next - Decodes next unit.");
     println!("q | quit - Quits program.");
     println!("? | help - Shows this text.");
+    println!("nal - prints current nal.");
+    println!("payload - prints current payload.");
+    println!("bytes - prints payload raw bytes.");
 }
 
 fn print_curr_slim(curr: &Current) {
@@ -17,11 +23,12 @@ fn print_curr_slim(curr: &Current) {
                      curr.parser_error.as_ref().unwrap());
         },
         Some(ref nal) => {
-            println!("Parsed NAL of type {}.", nal.nal_unit_type);
+            print!("Parsed NAL of type {}. ", nal.nal_unit_type);
             match curr.payload {
                 None => println!("Failed to parse payload: {:?}",
                                  curr.parser_error.as_ref().unwrap()),
-                Some(ref payload) => println!("Parsed {}", "x"),
+                Some(ref _payload) => println!("Parsed {}",
+                                     curr.payload.as_ref().unwrap()),
             }
         },
     }
@@ -48,9 +55,9 @@ fn print_payload_bytes(curr: &Current) {
     println!("");
 }
 
-pub fn invoke<R: Read>(command: String,
-                       current: &mut Current,
-                       bitreader: &mut BitReader<R>) -> bool {
+pub fn eval<R: Read>(command: String,
+                     current: &mut Current,
+                     bitreader: &mut BitReader<R>) -> bool {
     match command.as_ref() {
         "" => {},
         "q" | "quit" => return false,
@@ -82,4 +89,25 @@ pub fn invoke<R: Read>(command: String,
     };
 
     return true;
+}
+
+pub fn eval_loop(file: File) {
+    let mut bitreader = BitReader::new(file);
+    let mut current = Current::new();
+
+    loop {
+        let mut input = String::new();
+        /* Read next command */
+        print!(">");
+        stdout().flush().unwrap();
+        if io::stdin().read_line(&mut input).is_err() {
+            println!("Error reading from stdin");
+            return;
+        }
+        /* Remove newline */
+        input.pop();
+        if !eval(input, &mut current, &mut bitreader) {
+            break;
+        }
+    }
 }

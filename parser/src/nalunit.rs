@@ -21,6 +21,17 @@ pub enum NalPayload {
     PictureParameterSet(PictureParameterSet),
 }
 
+impl fmt::Display for NalPayload {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            NalPayload::SequenceParameterSet(_) =>
+                write!(f, "Sequence parameter set"),
+            NalPayload::PictureParameterSet(_) =>
+                write!(f, "Picture parameter set"),
+        }
+    }
+}
+
 fn err(text: &str) -> ParserError {
     let unit = ParserUnit::Nal();
     let description = String::from(text);

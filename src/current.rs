@@ -39,7 +39,6 @@ impl Current {
 
     /* Return false when no more data */
     pub fn next<R: Read>(&mut self, bitreader: &mut BitReader<R>) -> bool {
-        self.nal = None;
         self.payload = None;
         self.parser_error = None;
         self.rbsp = None;
@@ -53,6 +52,7 @@ impl Current {
         let parsed_nal = NalUnit::parse(bitreader);
         if parsed_nal.is_err() {
             self.parser_error = parsed_nal.err();
+            self.nal = None;
             return true;
         }
 
